@@ -70,6 +70,8 @@ jj split -r @ --no-pager -i
 jj squash                    # Squash @ into parent
 jj squash -r REV             # Squash REV into its parent
 jj squash --into REV         # Squash @ into a specific revision
+jj squash --into REV -d      # Keep destination commit's message (no editor)
+jj squash --into REV -m MSG  # Set a new message (no editor)
 ```
 
 ### Rebasing
