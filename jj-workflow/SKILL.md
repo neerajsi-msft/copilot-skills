@@ -1,6 +1,6 @@
 ---
 name: jj-workflow
-description: Reference guide for working with jj (Jujutsu) version control. Use when committing, splitting, rebasing, or managing change stacks with jj. WHEN: jj commit, jj split, jj new, jj describe, jj log, jj squash, jj rebase, version control workflow, commit changes, split commits.
+description: "Reference guide for working with jj (Jujutsu) version control. Use when committing, splitting, rebasing, or managing change stacks with jj. WHEN: jj commit, jj split, jj new, jj describe, jj log, jj squash, jj rebase, version control workflow, commit changes, split commits."
 ---
 
 # jj (Jujutsu) Workflow Guide
@@ -166,10 +166,41 @@ doesn'\''t run in a threaded context.'
 `jj absorb` automatically matches hunks in the working copy to the
 commits that last touched those lines, and amends each commit:
 ```bash
-jj absorb --no-pager
+jj absorb
 ```
-This is much faster than manual splitting when you have small fixups
-across many files. It only works for modified lines (not new files).
+
+This is the **preferred way** to amend earlier commits when you have
+small fixups across multiple files. Much faster than manual
+`jj squash --from @ --into REV` for each file.
+
+### When to use absorb vs squash
+
+| Scenario | Use |
+|---|---|
+| Fixups to lines already in the stack | `jj absorb` — auto-routes each hunk |
+| New files or new code blocks | `jj squash --into REV` — absorb can't match new content |
+| Moving all of @ into a specific commit | `jj squash --into REV` |
+| Combining two adjacent commits | `jj squash` (squashes @ into parent) |
+
+### Typical workflow
+
+```bash
+# Make changes across several files
+vim foo.rs bar.rs baz.c
+
+# Absorb routes each hunk to the commit that last touched those lines
+jj absorb
+
+# Check the result
+jj log --limit 5
+```
+
+### Limitations
+
+- Only works for **modified lines** in existing files, not new files
+- Hunks that can't be unambiguously matched to a single commit are left
+  in the working copy — use `jj squash --into REV` for those
+- Run `jj diff` after absorb to see if anything was left behind
 
 ## Editing mid-stack commits
 
