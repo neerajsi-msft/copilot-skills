@@ -1,0 +1,27 @@
+
+[merge-tools.bc-diff]
+program = "/home/neerajsi/bin/bc-wsl-diff"
+diff-args = ["$left", "$right"]
+
+[merge-tools.bc]
+program = "/home/neerajsi/bin/bc-wsl-merge"
+edit-args = ["$left", "$right", "$output"]
+merge-args = ["$left", "$right", "$base", "$output"]
+merge-tool-edits-conflict-markers = false
+
+[ui]
+editor = "vim"
+diff.tool = "bc-diff"
+merge-editor = "bc"
+
+[aliases]
+ld = ["log", "-T", "builtin_log_detailed"]
+stack = ["rebase", "--after", "base", "--before", "merge", "--revisions"]
+add-merge-leg = ["rebase", "--source", "merge", "--onto", "parents(merge)", "--onto"]
+
+[revset-aliases]
+"merge(to)" = "heads(::to & merges())"
+"merge" = "merge(@)"
+"base(to)" = "fork_point(trunk() | to)"
+"base" = "base(@)"
+
