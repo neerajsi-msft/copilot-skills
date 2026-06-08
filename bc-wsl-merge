@@ -1,0 +1,2 @@
+#!/bin/bash
+"/mnt/c/Program Files/Beyond Compare 5/BComp.exe" "$(wslpath -aw "$1")" "$(wslpath -aw "$2")" "$(wslpath -aw "$3")" "$(wslpath -aw "$4")"
