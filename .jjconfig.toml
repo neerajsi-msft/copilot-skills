@@ -18,6 +18,35 @@ merge-editor = "bc"
 ld = ["log", "-T", "builtin_log_detailed"]
 stack = ["rebase", "--after", "base", "--before", "merge", "--revisions"]
 add-merge-leg = ["rebase", "--source", "merge", "--onto", "parents(merge)", "--onto"]
+delete-merge-leg = ["util", "exec", "--", "bash", "-c", """
+    set -euo pipefail
+    parent="$*"
+    jj rebase --source merge --onto "parents(merge) ~ ($parent)"
+""", ""]
+
+put-on-branch = ["util", "exec", "--", "bash", "-c", """
+    set -euo pipefail
+    bookmark="$1"
+    shift
+    revset="$*"
+    if [[ "$(jj bookmark list "exact:$bookmark" -T 'name ++ "\n"' 2>/dev/null)" != "$bookmark" ]]; then
+        echo "error: no such local bookmark: $bookmark" >&2
+        exit 1
+    fi
+    resolved_revset="$(jj log --no-graph -r "$revset" -T 'change_id.shortest() ++ "\n"' | paste -sd '|' -)"
+    head="$(jj log --no-graph -r "exactly(heads($resolved_revset), 1)" -T 'change_id.shortest()')"
+    jj rebase --revisions "$resolved_revset" --after "$bookmark"
+    jj bookmark move "exact:$bookmark" --to "$head"
+""", ""]
+
+create-tracked-bookmark = ["util", "exec", "--", "bash", "-c", """
+    set -euo pipefail
+    bookmark="$1"
+    shift
+    jj bookmark create "$bookmark" -r "$@"
+    jj bookmark track "exact:$bookmark"
+""", ""]
+
 
 [revset-aliases]
 "merge(to)" = "heads(::to & merges())"
