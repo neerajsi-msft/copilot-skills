@@ -210,35 +210,38 @@ stacked with `L`.
 |---|---|
 | `L` | Local bookmarked change or stack replaced by the squash merge. |
 | `S` | Exact upstream squash commit containing the logical change from `L`. |
+| `U` | Current upstream main tip, which contains `S` plus later changes. |
 | `T` | Root of the other local leg that must survive. |
-| `M` | Temporary reconciliation merge of `S` and `L`. |
+| `M` | Temporary reconciliation merge of `U` and `L`. |
 
-Identify the exact squash commit from the PR rather than assuming the current
-`main@origin` tip is the squash commit.
+Identify exact squash commit `S` from the PR to verify that it logically
+replaces `L`. Use current `main@origin` as `U` so reconciliation also includes
+unrelated changes that landed after the squash.
 
 ### 1. Create reconciliation merge `M`
 
 ```bash
-jj new S L -m 'temp: reconcile local change with upstream squash'
+jj new main@origin L -m 'temp: reconcile local change with upstream squash'
 ```
 
-Resolve `M` toward upstream `S`. The upstream squash is canonical; `L` remains
-only to keep the old graph connected and expose any differences.
+Resolve `M` toward upstream `U`. Upstream is canonical; `L` remains only to
+keep the old graph connected and expose any differences.
 
 Inspect the result:
 
 ```bash
-jj diff --git --from S --to M
+jj diff --git --from main@origin --to M
 ```
 
-If `S` fully represents `L`, this diff should be empty after resolution. If it
-reveals local changes omitted from the squash, stop and decide explicitly
+This diff should be empty after resolution. Separately compare `L` with exact
+squash commit `S`; if `S` omitted local changes, stop and decide explicitly
 whether those changes should survive.
 
 ### 2. Rebase the surviving leg and its descendants
 
 ```bash
 jj rebase -s T -d M
+jj simplify-parents -s <new-tip>
 ```
 
 Use `-s`, not a hand-written revision range. The intent is to move `T` and its
@@ -281,10 +284,12 @@ merge `M`. Once confirmed:
 
 ```bash
 jj abandon 'main@origin..M'
+jj simplify-parents -s <new-tip>
 ```
 
 This rebases the surviving descendants directly onto upstream main and removes
-the temporary reconciliation topology.
+the temporary reconciliation topology. `simplify-parents` removes any old-main
+or squash parent that is already an indirect ancestor through another parent.
 
 Never run the abandon command if the preview includes local work not
 represented upstream.
@@ -310,14 +315,16 @@ Do not push backup bookmarks or remote deletions unless explicitly requested.
 
 - **Fetch reports abandoned changes:** restore the pre-fetch operation before
   doing anything else.
-- **`M` differs materially from `S`:** the squash did not fully replace `L`;
-  stop rather than silently dropping changes.
+- **`M` differs from `U`:** resolve it toward upstream before continuing.
+- **`S` differs materially from `L`:** the squash did not fully replace the
+  local change; stop rather than silently dropping changes.
 - **`jj rebase -s T -d M` moves unrelated work:** select a more precise root
   `T` and retry from the operation log.
 - **The abandon preview contains desired work:** do not abandon it; correct the
   graph or use an explicit revision set.
-- **Conflicts appear only after abandoning `M`:** restore the prior operation;
-  `M` was still carrying required resolution content.
+- **Conflicts appear after abandoning `M`:** restore the prior operation if the
+  conflict set is unexpected. If they are the original known merge conflicts,
+  reapply the reviewed resolutions and run `simplify-parents` again.
 
 ## Commit Message Style
 
