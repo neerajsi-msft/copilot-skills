@@ -1,6 +1,10 @@
 ---
 name: jj-workflow
-description: "Reference guide for working with jj (Jujutsu) version control. Use when committing, splitting, rebasing, or managing change stacks with jj. WHEN: jj commit, jj split, jj new, jj describe, jj log, jj squash, jj rebase, version control workflow, commit changes, split commits."
+description: >-
+  Reference guide for working with jj version control, including commits,
+  splits, rebases, merge graphs, fetch recovery, and upstream squash merges.
+  WHEN the user says - jj commit, jj split, jj rebase, jj fetch, squash
+  merge recovery, stacked changes, repair jj graph.
 ---
 
 # jj (Jujutsu) Workflow Guide
@@ -144,6 +148,176 @@ jj new
   which branch.
 - **Conflicts** are recorded in the revision, not blocking. You can
   continue working and resolve later.
+
+## Fetch post-check and auto-abandon recovery
+
+A fetch that observes a squash merge, deleted branch, force update, or
+rewritten remote bookmark can abandon the old local change. This may happen
+even when the change has local descendants: jj can rebase those descendants
+onto an earlier surviving ancestor, leaving their graph intact but removing
+the parent content they depended on.
+
+Fetch often reports at least some of the abandoned changes in its output.
+Treat an abandonment message as a stop signal.
+
+After a potentially destructive fetch, immediately inspect the graph:
+
+```bash
+jj git fetch --remote origin
+jj status --no-pager
+jj log --no-pager
+```
+
+Do not start resolving conflicts or rebasing if an expected local change
+disappeared or a descendant acquired the wrong parent.
+
+### Restore the pre-fetch graph
+
+Find the operation immediately before the fetch:
+
+```bash
+jj op log
+jj op restore <pre-fetch-operation-id>
+```
+
+Create local backup bookmarks for every relevant local instance of the change
+that the upstream squash replaced:
+
+```bash
+jj bookmark create local-backup/change-1 -r L1
+jj bookmark create local-backup/change-2 -r L2
+```
+
+Only the squash-replaced changes `L` need temporary bookmarks. Their ancestors
+are protected by those bookmarks; the working copy and normal branch bookmarks
+continue to protect the other legs.
+
+Fetch again and repeat the immediate graph check:
+
+```bash
+jj git fetch --remote origin
+jj status --no-pager
+jj log --no-pager
+```
+
+## Reconcile local merges after an upstream squash merge
+
+Use this workflow when a local change or stack `L` was squash-merged upstream,
+while another local leg `T` and its descendants had already been merged or
+stacked with `L`.
+
+| Name | Meaning |
+|---|---|
+| `L` | Local bookmarked change or stack replaced by the squash merge. |
+| `S` | Exact upstream squash commit containing the logical change from `L`. |
+| `T` | Root of the other local leg that must survive. |
+| `M` | Temporary reconciliation merge of `S` and `L`. |
+
+Identify the exact squash commit from the PR rather than assuming the current
+`main@origin` tip is the squash commit.
+
+### 1. Create reconciliation merge `M`
+
+```bash
+jj new S L -m 'temp: reconcile local change with upstream squash'
+```
+
+Resolve `M` toward upstream `S`. The upstream squash is canonical; `L` remains
+only to keep the old graph connected and expose any differences.
+
+Inspect the result:
+
+```bash
+jj diff --git --from S --to M
+```
+
+If `S` fully represents `L`, this diff should be empty after resolution. If it
+reveals local changes omitted from the squash, stop and decide explicitly
+whether those changes should survive.
+
+### 2. Rebase the surviving leg and its descendants
+
+```bash
+jj rebase -s T -d M
+```
+
+Use `-s`, not a hand-written revision range. The intent is to move `T` and its
+entire descendant subgraph, including old merge revisions and later stacked
+work. jj can then simplify merge edges made redundant by the new ancestry.
+
+This may expose conflicts caused by unrelated upstream changes that landed
+after the original branch point. Resolve them as ordinary upstream conflicts;
+do not reintroduce changes already represented by `S`.
+
+### 3. Validate the reconstructed graph
+
+```bash
+jj log --no-pager
+jj diff --git --from main@origin --to <new-tip>
+```
+
+The effective branch diff should contain the surviving leg and legitimate
+integration resolutions, not a second copy of `L`.
+
+When an old local result remains available, compare final trees:
+
+```bash
+jj diff --git --from <old-result> --to <new-tip>
+```
+
+Expected differences should be limited to unrelated upstream changes and
+deliberate conflict resolutions.
+
+### 4. Abandon superseded reconciliation ancestry
+
+Preview the exact set first:
+
+```bash
+jj log --no-pager -r 'main@origin..M'
+```
+
+The set should contain only obsolete local instances of `L` and temporary
+merge `M`. Once confirmed:
+
+```bash
+jj abandon 'main@origin..M'
+```
+
+This rebases the surviving descendants directly onto upstream main and removes
+the temporary reconciliation topology.
+
+Never run the abandon command if the preview includes local work not
+represented upstream.
+
+### 5. Finalize
+
+```bash
+jj log --no-pager
+jj diff --git --from main@origin --to <new-tip>
+jj bookmark set <live-branch> -r <new-tip>
+```
+
+Keep `local-backup/*` bookmarks until the updated branch is pushed and
+validated. Then remove them locally:
+
+```bash
+jj bookmark forget local-backup/change-1
+```
+
+Do not push backup bookmarks or remote deletions unless explicitly requested.
+
+### Failure modes
+
+- **Fetch reports abandoned changes:** restore the pre-fetch operation before
+  doing anything else.
+- **`M` differs materially from `S`:** the squash did not fully replace `L`;
+  stop rather than silently dropping changes.
+- **`jj rebase -s T -d M` moves unrelated work:** select a more precise root
+  `T` and retry from the operation log.
+- **The abandon preview contains desired work:** do not abandon it; correct the
+  graph or use an explicit revision set.
+- **Conflicts appear only after abandoning `M`:** restore the prior operation;
+  `M` was still carrying required resolution content.
 
 ## Commit Message Style
 
